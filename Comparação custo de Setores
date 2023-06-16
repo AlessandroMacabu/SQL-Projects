@@ -1,0 +1,256 @@
+-----------------------------------------------------------Sentinelas / Embaixadores
+with geral as (
+
+
+WITH eventos AS (select
+  'Sentinela' classificação,
+  u.name sentinel_name,
+  u.phone sentinel_phone,
+  e.shortlink,
+  e.event_id,
+  e.created_at event_timestamp,
+  et.name event_type_name,
+  case when event_type_name in  ('Buraco na rua','Semáforo quebrado','Acúmulo de lixo em área pública','Alteração de circulação viária','Animal inusitado','Atraso de transporte público (Metrô e CPTM)','Atraso de transporte público (Ônibus)','Aviso de manifestação','Aviso de protesto','Aviso de risco meteorológico','Balão sobrevoando','Boa ação','Boletim semanal','Bueiro sem tampa','Chuva intensa','Desligamento programado de energia','Evento cultural','Evento esportivo','Falta de água','Falta de iluminação','Falta de luz','Feira livre','Festa','Fios de energia','Furto de cabos públicos','Golpe','Helicóptero sobrevoando','Jogo em estádio','Neblina intensa','Notícia pública','Outro tipo de evento','Poda de árvore','Ponto de usuários de drogas','Reunião de CONSEG','Reunião de PVS','Risco de alagamento','Show','Tempestade','Vacinação','Ventania intensa') 
+        then 0
+       when event_type_name in ('Foco de incêndio','Trânsito','Queda de árvore','Veículo parado na via','Pessoa encontrada','Animal encontrado','Obra/manutenção na via','Pessoa desaparecida','Manifestação política','Animal desaparecido','Manutenção na via','Interdição na via','Obra') 
+        then 1
+       when event_type_name in ('Acidente de bicicleta','Acidente de trabalho','Acidente doméstico','Animal na pista','Atividade ilícita','Furto de objeto','Furto de veículo','Ocorrência Policial','Operação policial','Perturbação do sossego','Queda de árvore','Tentativa de furto','Tráfico de drogas','Vazamento de água','Óleo na pista') 
+        then 3
+       when event_type_name in ('Abordagem policial','Acidente de trânsito leve','Acidente por descarga elétrica','Agressão','Alagamento','Ameaça','Assédio','Ataque por animal','Furto à loja','Maus tratos à animais','Perseguição policial','Poste caído','Queda de altura','Queda de avião','Roubo de carga','Roubo de objeto','Roubo de veículo','Roubo à loja','Tentativa de roubo','Vandalismo','Vazamento de gás','Vazamento de produto inflamável','Vazamento de produto tóxico')
+        then 5 
+       when event_type_name in ('Acidente de trânsito grave','Apreensão de menor de idade','Apreensão de objetos','Apreensão de substâncias ilícitas','Apreensão de veículo','Atropelamento','Briga','Capotamento de veículo','Explosão','Inundação','Prisão','Resgate de animal','Resgate de pessoa','Sequestro','Tentativa de invasão','Tentativa de sequestro')
+        then 10
+       when event_type_name in ('Afogamento','Apreensão de armas','Arrastão','Briga de torcidas','Corpo encontrado','Desabamento','Desmoronamento','Feminicídio','Homicídio','Homofobia','Incêndio','Invasão','Latrocínio','Protesto','Racismo','Roubo à domicílio','Tentativa de homicídio','Transfobia','Troca de tiros','Xenofobia')
+       then 15
+    else 0 end Valor
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND (u.user_type_id = 2 or u.user_type_name = 'deleted_sentinel')
+  and EXTRACT(EPOCH FROM (e.created_at - e.date))/60 < 180
+
+  AND e.created_at::date >= date_trunc('week', now() - (INTERVAL '10 week'))
+  AND e.created_at < date_trunc('week', now()) 
+
+UNION ALL
+
+select
+  'Embaixador' classificação,
+  u.name sentinel_name,
+  u.phone sentinel_phone,
+  e.shortlink,
+  e.event_id,
+  e.created_at event_timestamp,
+  et.name event_type_name,
+  2.5 "Valor"
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND u.user_type_id = 6
+  AND e.created_at::date >= date_trunc('week', now() - (INTERVAL '10 week'))
+  AND e.created_at < date_trunc('week', now()) 
+  
+ORDER BY event_timestamp desc
+
+),
+
+-----------------------------------------------------------ENGAJAMENTO
+
+engajamento as (
+
+select 
+event_id,
+
+unique_impressions_count,
+event_view_unique_impressions_count,
+map_pin_impressions_count,
+event_media_views_count,
+coalesce((sum(event_view_total_time_spent)/40000/sum(nullif(event_view_impressions_count,0))::float)*5,0) time_spent_per_event_view,
+sum(comments_count*2+reactions_up_votes_count+reactions_down_votes_count+event_media_views_count + event_media_fullscreen_opens_count + event_media_scrolls_count + event_video_watches_count) interactions_per_eventview
+
+from fact_events_analytics
+group by 1,2,3,4,5
+
+)
+
+select 
+date_trunc('week',event_timestamp) datazz,
+count(distinct evt.event_id) "Quantidade",
+sum(valor) "Custo",
+sum(unique_impressions_count+event_view_unique_impressions_count+map_pin_impressions_count+event_media_views_count)+sum(interactions_per_eventview) "Engagement",
+
+sum(valor)/count(distinct evt.event_id) "Custo por Evento",
+sum(valor)/(sum(unique_impressions_count+event_view_unique_impressions_count+map_pin_impressions_count+event_media_views_count)+sum(interactions_per_eventview)) "Custo por engajamento"
+
+from eventos evt
+join engajamento ejt on ejt.event_id = evt.event_id
+group by 1
+),
+
+
+
+
+-----------------------------------------------------------LIDERES
+lideres as 
+(
+
+with tudo as ( with gr as (
+select
+distinct news_sources_id,
+(submission_price) submission_price,
+(submission_price) as group_total_price,
+dataz
+from
+    (
+    select
+    u.user_id as sentinel_user_id,
+    u.news_sources_id,
+    coalesce (aus.submission_price,0) as submission_price,
+    dataz
+    from dim_users u
+--APROVED UGC SUBMISSIONS:
+left join (
+    select
+    date_trunc('week',e.created_at) dataz ,
+    sum(case when et.name in ('Buraco na rua','Semáforo quebrado')
+    then 0
+  when et.name in ('Acúmulo de lixo em área pública','Alteração de circulação viária','Animal desaparecido','Animal encontrado','Animal inusitado','Atraso de transporte público (Metrô e CPTM)','Atraso de transporte público (Ônibus)','Aviso de manifestação','Aviso de protesto','Aviso de risco meteorológico','Balão sobrevoando','Boa ação','Boletim semanal','Bueiro sem tampa','Chuva intensa','Desligamento programado de energia','Evento cultural','Evento esportivo','Falta de água','Falta de iluminação','Falta de luz','Feira livre','Festa','Fios de energia','Foco de incêndio','Furto de cabos públicos','Golpe','Helicóptero sobrevoando','Interdição na via','Jogo em estádio','Neblina intensa','Notícia pública','Manutenção na via','Obra/manutenção na via','Outro tipo de evento','Pessoa desaparecida','Pessoa encontrada','Poda de árvore','Ponto de usuários de drogas','Queda de árvore','Reunião de CONSEG','Reunião de PVS','Risco de alagamento','Show','Tempestade','Trânsito','Vacinação','Veículo parado na via','Ventania intensa','Obra')
+    then 1  
+    when et.name in ('Acidente de bicicleta','Acidente de trabalho','Acidente doméstico','Animal na pista','Atividade ilícita','Furto de objeto','Furto de veículo','Ocorrência Policial','Operação policial','Perturbação do sossego','Queda de árvore','Tentativa de furto','Tráfico de drogas','Vazamento de água','Óleo na pista')
+    then 3
+    when et.name in ('Abordagem policial','Acidente de trânsito leve','Acidente por descarga elétrica','Agressão','Alagamento','Ameaça','Assédio','Ataque por animal','Furto à loja','Maus tratos à animais','Perseguição policial','Poste caído','Queda de altura','Queda de avião','Roubo de carga','Roubo de objeto','Roubo de veículo','Roubo à loja','Tentativa de roubo','Vandalismo','Vazamento de gás','Vazamento de produto inflamável','Vazamento de produto tóxico')
+    then 5
+    when et.name in ('Acidente de trânsito grave','Apreensão de menor de idade','Apreensão de objetos','Apreensão de substâncias ilícitas','Apreensão de veículo','Atropelamento','Briga','Capotamento de veículo','Explosão','Inundação','Prisão','Resgate de animal','Resgate de pessoa','Sequestro','Tentativa de invasão','Tentativa de sequestro')
+    then 10
+    when et.name in ('Afogamento','Apreensão de armas','Arrastão','Briga de torcidas','Corpo encontrado','Desabamento','Desmoronamento','Feminicídio','Homicídio','Homofobia','Incêndio','Invasão','Latrocínio','Manifestação política','Protesto','Racismo','Roubo à domicílio','Tentativa de homicídio','Transfobia','Troca de tiros','Xenofobia')
+    then 15 else 0 end) as submission_price,
+    u.news_sources_id as news_source_id
+    from fact_submissions s
+    left join dim_users u on u.user_id = s.creator_user_id
+    left join dim_events e on e.event_id = s.event_id
+    left join dim_event_types et on e.event_type_id = et.event_type_id
+    where e.deleted_at is null
+    and s.status_id = 4
+    and EXTRACT(EPOCH FROM (e.created_at - e.date))/60 < 180
+    --and e.city like '%São Paulo%'
+    and date_trunc('week', (e.created_at AT TIME ZONE 'America/Sao_Paulo')) >= date_trunc('week', (current_date AT TIME ZONE 'America/Sao_Paulo' - interval '10 weeks'))
+    group by 1,3
+    ) aus on aus.news_source_id = u.news_sources_id
+where 1=1
+and u.user_type_id = 2
+    ) sent
+    
+)
+
+
+select
+dataz,
+u.phone as sentinel_phone,
+u.pix_key,
+u.name as leader_name,
+u.user_id as leader_user_id,
+u.news_sources_id,
+gr.group_total_price,
+gr.group_total_price*0.25 as leader_price
+from dim_users u
+left join gr on gr.news_sources_id = u.news_sources_id
+where u.user_type_id = 3 and u.pix_key <> '217.957.668-40' and u.pix_key <> '366.414.708-14'
+and gr.group_total_price >0
+and u.news_sources_id <> '0869f833-c826-43f0-a915-5cf9fd6ca785'
+order by 1 desc
+)
+
+select 
+dataz,
+sum(leader_price) preço_lideres
+from tudo
+group by 1
+order by 1 desc
+
+),
+-----------------------------------------------------------SIGNUPS
+signups as
+(
+SELECT DATE_TRUNC('week', signup_timestamp) as Cohort_week,
+count (distinct user_id) as total_signups
+from fact_users_analytics fua
+WHERE signup_timestamp::date>='2022-09-05'
+
+GROUP BY 1
+),
+-----------------------------------------------------------EVENTOS GERAL
+
+
+Total_eventos as (select 
+DATE_TRUNC('week',de.created_at) datazzz,
+count(de.event_id) eventos_nc,
+sum(unique_impressions_count+event_view_unique_impressions_count+map_pin_impressions_count+event_media_views_count)+sum(comments_count*2+reactions_up_votes_count+reactions_down_votes_count+event_media_views_count + event_media_fullscreen_opens_count + event_media_scrolls_count + event_video_watches_count) engagemento_nc
+from dim_events de
+join fact_events_analytics fea on fea.event_id = de.event_id
+
+
+WHERE de.event_id NOT IN (select
+  
+  e.event_id
+  
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND (u.user_type_id = 2 or u.user_type_name = 'deleted_sentinel')
+  and EXTRACT(EPOCH FROM (e.created_at - e.date))/60 < 180
+
+  AND e.created_at::date >= date_trunc('week', now() - (INTERVAL '10 week'))
+  AND e.created_at < date_trunc('week', now()) 
+
+UNION ALL
+
+select
+ 
+  e.event_id
+ 
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND u.user_type_id = 6
+  AND e.created_at::date >= date_trunc('week', now() - (INTERVAL '10 week'))
+  AND e.created_at < date_trunc('week', now()) 
+  
+) AND  DATE_TRUNC('week',de.created_at) >= DATE_TRUNC('week',current_date - interval '10 weeks')
+
+GROUP BY 1
+ORDER BY 1 desc
+)
+
+
+
+-----------------------------------------------------------QUERY FINAL
+select 
+datazz,
+total_signups,
+"Quantidade" "Eventos Supply",
+"Custo" + preço_lideres "Custo Supply",
+"Engagement" "Engajamento Supply",
+("Custo" + preço_lideres)/"Quantidade" "Custo por evento Supply",
+("Custo" + preço_lideres)/"Engagement" "Custo por Engajamento Supply",
+"Engagement"/"Quantidade" "Engajamento por Evento Supply",
+eventos_nc "Eventos NC's",
+4783 "Custo NC's",
+engagemento_nc "Engajamento NC's", 
+4783/eventos_nc::FLOAT "Custo por evento NC's",
+4783/engagemento_nc::FLOAT "Custo por engajamento NC's",
+engagemento_nc/eventos_nc::FLOAT "Engajamento por evento NC's"
+
+
+from geral
+join lideres ldr on ldr.dataz = geral.datazz
+join signups sgp on sgp.Cohort_week = geral.datazz
+join Total_eventos tte on tte.datazzz = geral.datazz
+
