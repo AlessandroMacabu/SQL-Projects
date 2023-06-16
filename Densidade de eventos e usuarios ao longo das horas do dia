@@ -1,0 +1,54 @@
+#EVENTOS
+WITH base AS 
+(
+SELECT
+de.event_id,
+de.date at time zone 'America/Sao_Paulo' as event_local_timestamp,
+de.created_at at time zone 'America/Sao_Paulo' as created_local_timestamp
+
+FROM dim_events de
+LEFT JOIN fact_events_analytics fea on fea.event_id = de.event_id
+where date_trunc('month',de.created_at) = date_trunc('month',current_date) - interval '1 month'
+GROUP BY 1,2,3
+ORDER BY 3 desc
+),
+
+tempo as 
+(
+select
+max(date_trunc('month',created_at - interval '1 month')) data
+from dim_events  
+)
+
+
+
+select
+extract(day from created_local_timestamp) Mês_passado, 
+extract(hour from created_local_timestamp) ,
+count(event_id)
+from base
+group by 1,2
+
+order by 1,2
+
+#USUARIOS
+with atividade as (select
+user_id usuario,
+origin,
+created_at teste
+from fact_event_impressions
+where date_trunc('month',created_at) = date_trunc('month',current_date) - interval '1 month'
+)
+
+select
+extract(day from teste) Mês_passado, 
+extract(hour from teste) Hora,
+coalesce(count(distinct usuario),0) usagem
+from atividade
+group by 1,2
+
+order by 1,2
+
+
+
+
