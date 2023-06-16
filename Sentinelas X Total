@@ -1,0 +1,39 @@
+WITH eventos as
+(
+    select
+        count(distinct event_id) eventos_total,
+        date_trunc('week', created_at::date) data_total
+    from dim_events e 
+    where created_at::date >= current_date - (interval '10 week') 
+
+    group by 2
+    order by 2 desc
+),
+
+sentinelas as 
+(
+    select
+          date_trunc('week',e.created_at) data_sent,
+          count(distinct e.event_id) eventos_sent
+    
+    FROM dim_events e
+    LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+    LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+    JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+    WHERE e.deleted_at is null 
+      AND (u.user_type_id = 2  or  u.user_type_name = 'deleted_sentinel')
+      AND e.created_at::date >= current_date - (interval '10 week')  --and city like '%São Paulo%'
+     
+    GROUP BY 1
+    ORDER BY 1 
+)
+
+
+select
+data_total,
+eventos_total,
+eventos_sent,
+eventos_sent/eventos_total::float percent_sentinelas
+from eventos evt
+join sentinelas stl on stl.data_sent = evt.data_total 
+order by 1
