@@ -1,0 +1,36 @@
+WITH tudo AS 
+(
+SELECT 
+    requesting_user solicitante,
+    target_user solicitado,
+    request_created_at data
+FROM fact_users_contacts_request
+WHERE request_status =  'pending'
+ORDER BY 1
+),
+
+contatos AS 
+(
+SELECT 
+    user_id usuario,
+    phone numero,
+    username nome,
+    user_status status
+FROM fact_users_analytics
+)
+
+SELECT
+    DISTINCT solicitado requested,
+    ctt.numero Phone_requested,
+    ctt.nome name_requested,
+    ctt.status status_requested,
+    solicitante requester,
+    cttt.numero phone_requester,
+    cttt.nome name_requester,
+    cttt.status status_requester,
+    data
+FROM tudo
+JOIN contatos ctt on ctt.usuario = tudo.solicitado
+JOIN contatos cttt on cttt.usuario = tudo.solicitante
+ORDER BY 5
+
