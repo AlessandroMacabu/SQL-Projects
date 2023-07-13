@@ -1,0 +1,53 @@
+WITH eventos AS (select
+  'Sentinela' classificação,
+  u.name sentinel_name,
+  u.phone sentinel_phone,
+  e.shortlink,
+  e.event_id,
+  e.created_at event_timestamp,
+  et.name event_type_name
+  
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND (u.user_type_id = 2 or u.user_type_name = 'deleted_sentinel')
+
+
+UNION ALL
+
+select
+  'Embaixador' classificação,
+  u.name sentinel_name,
+  u.phone sentinel_phone,
+  e.shortlink,
+  e.event_id,
+  e.created_at event_timestamp,
+  et.name event_type_name
+
+FROM dim_events e
+LEFT JOIN fact_submissions fs on fs.event_id = e.event_id
+LEFT JOIN dim_event_types et on e.event_type_id = et.event_type_id 
+JOIN dim_users u ON coalesce(e.author_id, fs.creator_user_id) = u.user_id 
+WHERE e.deleted_at is null 
+  AND u.user_type_id = 6
+
+  
+ORDER BY event_timestamp desc
+
+)
+
+
+select
+dense_rank() over(partition by date_trunc('week',created_at)  order by count( fea.event_id) desc) "Rank Quantidade de eventos",
+date_trunc('week',created_at),
+event_news_source_type,
+count( fea.event_id) Eventos,
+nullif(count(evt.*) FILTER (where classificação = 'Sentinela'),0) Sentinelas,
+nullif(count(evt.*) FILTER (where classificação = 'Embaixador'),0) Embaixador
+
+from fact_events_analytics fea
+left join eventos evt on evt.event_id = fea.event_id
+group by 2,3
+order by 2 desc,4 desc
