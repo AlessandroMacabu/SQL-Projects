@@ -1,0 +1,36 @@
+ WITH onb AS (
+    SELECT user_pseudo_id,
+    timestamp_micros(user_first_touch_timestamp) AS install_timestamp,
+    device.operating_system AS OS,
+    device.operating_system_version AS OS_version,
+    event_name,
+    timestamp_micros(event_timestamp) AS event_timestamp,
+    (SELECT up.value.string_value FROM UNNEST(user_properties) up WHERE up.key = 'location_permission'
+   ) location_permission_status,
+   (SELECT up.value.string_value FROM UNNEST(user_properties) up WHERE up.key = 'notification_permission'
+   ) notification_permission,
+    (SELECT ep.value.string_value FROM UNNEST(event_params) ep WHERE ep.key = 'firebase_screen') AS app_screen,
+    (SELECT ep.value.string_value FROM UNNEST(event_params) ep WHERE ep.key = 'firebase_previous_screen') AS firebase_previous_screen,
+    user_id
+    FROM `civiapp-4c6cc.analytics_234296185.events_*`
+    )
+    
+    
+    SELECT
+      ugc_step,
+      user_count
+    FROM (
+    SELECT 
+     CASE 
+       WHEN ((event_name = 'screen_view') and app_screen in ('submit_event_occurrences_type', 'submit_event_type')) or (event_name in ('ugc_safety_tap', 'ugc_begin_tap')) then 'Start UGC - Set occurrence type (1/3)'  
+       WHEN event_name = 'screen_view' and app_screen in ('submit_event_location_confirmation', 'submit_event_location_map') then 'Set occurrence location (2/3)' 
+       WHEN event_name = 'screen_view' and app_screen in ('submit_event_review', 'submit_event_details') then 'Set occurrence details (3/3)' 
+       WHEN event_name = 'screen_view' and app_screen = 'submit_event_confirmation' then 'Submission confirmation'
+     ELSE null END ugc_step,
+     COUNT(distinct user_pseudo_id) user_count
+    FROM onb
+    WHERE date(event_timestamp, 'America/Sao_Paulo') between current_date - 7 AND current_date - 1
+    GROUP BY 1
+    ORDER BY 2 DESC
+    ) q
+    WHERE ugc_step IS NOT NULL
