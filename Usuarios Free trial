@@ -1,0 +1,92 @@
+WITH pendente as 
+(
+select
+    requesting_user usuario,
+    count(distinct target_user) pending_requests
+
+from fact_users_contacts_request
+where request_status = 'pending'
+group by 1
+),
+
+
+aceitos as 
+(
+select
+    requesting_user usuarioz,
+    count(distinct target_user) Aceitos_enviados
+    
+from fact_users_contacts_request
+where request_status = 'accepted'
+group by 1
+),
+
+
+aceitos_recebidosz as 
+(
+select
+    target_user usuariozz,
+    count(distinct requesting_user) aceitos_recebidos
+
+from fact_users_contacts_request
+where request_status = 'accepted'
+group by 1
+),
+
+protege as (
+WITH subscriptions_users AS (SELECT ROW_NUMBER() OVER (
+    PARTITION BY fua.user_id 
+    ORDER BY event_date DESC ),
+fua.saved_places_count,
+fua.is_premium,
+fua.username,
+fua.last_active,
+fua.signup_timestamp,
+fua.device_operating_system,
+q.*
+FROM 
+(SELECT  app_account_token AS user_id,
+    created_at AS event_date,
+    apple_notification_type,
+    apple_notification_subtype,
+    NULL AS google_notification_type_id
+FROM fact_apple_notifications_history fanh 
+UNION ALL
+SELECT fso.user_id AS user_id,
+    event_time AS event_date,
+    NULL AS apple_notification_type,
+    NULL AS apple_notification_subtype,
+    google_notification_type_id
+FROM fact_google_notifications_history h 
+INNER JOIN fact_subscriptions_orders fso on h.purchase_token = fso.purchase_token
+) q
+INNER JOIN fact_users_analytics fua ON fua.user_id = q.user_id 
+WHERE user_type_name <> 'employee')
+
+
+SELECT 
+su.user_id pago_trial,
+'PAGO' as classicação
+FROM subscriptions_users su
+WHERE ROW_NUMBER= 1
+UNION all
+SELECT 
+fua.user_id pago_trial, 'TRIAL' as classicação 
+FROM fact_users_analytics fua
+WHERE fua.is_premium 
+AND not exists (SELECT 1 FROM fact_subscriptions_orders fso WHERE fua.user_id=fso.user_id AND fua.is_premium))
+
+select 
+fua.user_id,
+ptg.classicação,
+fua.phone,
+fua.user_type_name,
+coalesce(pending_requests,0) "Pendentes",
+coalesce(Aceitos_enviados,0) "Enviados Aceitos",
+coalesce(aceitos_recebidos,0) "Recebidos Aceitos"
+from fact_users_analytics fua
+join protege ptg on ptg.pago_trial = fua.user_id
+left join pendente pdt on pdt.usuario = fua.user_id
+left join aceitos act on act.usuarioz = fua.user_id
+left join aceitos_recebidosz actz on actz.usuariozz = fua.user_id
+where pending_requests is not null or aceitos_recebidos is not null or Aceitos_enviados is not null
