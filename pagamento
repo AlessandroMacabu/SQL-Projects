@@ -1,0 +1,70 @@
+select
+u.phone as sentinel_phone,
+u.name as sentinel_name,
+u.user_id as sentinel_user_id,
+u.pix_key,
+u.news_sources_id,
+u.user_type_id,
+coalesce (se.event_price,0) + coalesce (aus.submission_price,0) as total_price,
+u.news_sources_name 
+from dim_users u
+--EVENTS NOT UGC:
+left join (
+    select
+    sum(
+    case when et.name in ('Buraco na rua','Semáforo quebrado')
+    then 0
+  when et.name in ('Acúmulo de lixo em área pública','Alteração de circulação viária','Animal desaparecido','Animal encontrado','Animal inusitado','Atraso de transporte público (Metrô e CPTM)','Atraso de transporte público (Ônibus)','Aviso de manifestação','Aviso de protesto','Aviso de risco meteorológico','Balão sobrevoando','Boa ação','Boletim semanal','Bueiro sem tampa','Chuva intensa','Desligamento programado de energia','Evento cultural','Evento esportivo','Falta de água','Falta de iluminação','Falta de luz','Feira livre','Festa','Fios de energia','Foco de incêndio','Furto de cabos públicos','Golpe','Helicóptero sobrevoando','Interdição na via','Jogo em estádio','Neblina intensa','Notícia pública','Manutenção na via','Obra/manutenção na via','Outro tipo de evento','Pessoa desaparecida','Pessoa encontrada','Poda de árvore','Ponto de usuários de drogas','Queda de árvore','Reunião de CONSEG','Reunião de PVS','Risco de alagamento','Show','Tempestade','Trânsito','Vacinação','Veículo parado na via','Ventania intensa','Obra')
+    then 0  
+    when et.name in ('Acidente de bicicleta','Acidente de trabalho','Acidente doméstico','Animal na pista','Atividade ilícita','Furto de objeto','Furto de veículo','Ocorrência Policial','Operação policial','Perturbação do sossego','Queda de árvore','Tentativa de furto','Tráfico de drogas','Vazamento de água','Óleo na pista')
+    then 1
+    when et.name in ('Abordagem policial','Acidente de trânsito leve','Acidente por descarga elétrica','Agressão','Alagamento','Ameaça','Assédio','Ataque por animal','Furto à loja','Maus tratos à animais','Perseguição policial','Poste caído','Queda de altura','Queda de avião','Roubo de carga','Roubo de objeto','Roubo de veículo','Roubo à loja','Tentativa de roubo','Vandalismo','Vazamento de gás','Vazamento de produto inflamável','Vazamento de produto tóxico')
+    then 3
+    when et.name in ('Acidente de trânsito grave','Apreensão de menor de idade','Apreensão de objetos','Apreensão de substâncias ilícitas','Apreensão de veículo','Atropelamento','Briga','Capotamento de veículo','Explosão','Inundação','Prisão','Resgate de animal','Resgate de pessoa','Sequestro','Tentativa de invasão','Tentativa de sequestro')
+    then 8
+    when et.name in ('Afogamento','Apreensão de armas','Arrastão','Briga de torcidas','Corpo encontrado','Desabamento','Desmoronamento','Feminicídio','Homicídio','Homofobia','Incêndio','Invasão','Latrocínio','Manifestação política','Protesto','Racismo','Roubo à domicílio','Tentativa de homicídio','Transfobia','Troca de tiros','Xenofobia')
+    then 13 else 0 end)
+    as event_price,
+    e.author_id
+    from dim_events e
+    left join dim_event_types et on e.event_type_id = et.event_type_id
+    where e.deleted_at is null
+    and EXTRACT(EPOCH FROM ( (e.created_at AT TIME ZONE 'America/Sao_Paulo') - (e.date AT TIME ZONE 'America/Sao_Paulo')))/60 < 180
+    --and city like '%São Paulo%'
+    and date_trunc('week', (e.created_at AT TIME ZONE 'America/Sao_Paulo')) = date_trunc('week', (current_date AT TIME ZONE 'America/Sao_Paulo'))
+    and e.news_source_id <> '79141e74-35cb-45a9-ba4e-7d3ce4f07b36'
+    group by 2
+    ) se on se.author_id = u.user_id
+--APROVED UGC SUBMISSIONS:
+left join (
+    select
+    sum(
+    case when et.name in ('Buraco na rua','Semáforo quebrado','Acúmulo de lixo em área pública','Alteração de circulação viária','Animal inusitado','Atraso de transporte público (Metrô e CPTM)','Atraso de transporte público (Ônibus)','Aviso de manifestação','Aviso de protesto','Aviso de risco meteorológico','Balão sobrevoando','Boa ação','Boletim semanal','Bueiro sem tampa','Chuva intensa','Desligamento programado de energia','Evento cultural','Evento esportivo','Falta de água','Falta de iluminação','Falta de luz','Feira livre','Festa','Fios de energia','Furto de cabos públicos','Golpe','Helicóptero sobrevoando','Jogo em estádio','Neblina intensa','Notícia pública','Outro tipo de evento','Poda de árvore','Ponto de usuários de drogas','Reunião de CONSEG','Reunião de PVS','Risco de alagamento','Show','Tempestade','Vacinação','Ventania intensa')
+    then 0
+  when et.name in ('Foco de incêndio','Trânsito','Queda de árvore','Veículo parado na via','Pessoa encontrada','Animal encontrado','Obra/manutenção na via','Pessoa desaparecida','Manifestação política','Animal desaparecido','Manutenção na via','Interdição na via','Obra')
+    then 0.75
+    when et.name in ('Acidente de bicicleta','Acidente de trabalho','Acidente doméstico','Animal na pista','Atividade ilícita','Operação policial','Queda de árvore','Tentativa de furto','Tráfico de drogas','Vazamento de água','Óleo na pista')
+    then 2
+    when et.name in ('Perturbação do sossego','Furto de objeto','Ocorrência Policial','Furto de veículo','Abordagem policial','Acidente de trânsito leve','Acidente por descarga elétrica','Agressão','Alagamento','Ameaça','Assédio','Ataque por animal','Furto à loja','Maus tratos à animais','Poste caído','Queda de altura','Queda de avião','Roubo de carga','Roubo de objeto','Tentativa de roubo','Vandalismo','Vazamento de gás','Vazamento de produto inflamável','Vazamento de produto tóxico')
+    then 4
+    when et.name in ('Perseguição policial','Roubo à loja','Roubo de veículo','Acidente de trânsito grave','Apreensão de menor de idade','Apreensão de objetos','Apreensão de substâncias ilícitas','Apreensão de veículo','Atropelamento','Briga','Capotamento de veículo','Explosão','Inundação','Resgate de animal','Resgate de pessoa','Sequestro','Tentativa de invasão','Tentativa de sequestro')
+    then 8
+    when et.name in ('Prisão','Afogamento','Apreensão de armas','Arrastão','Briga de torcidas','Corpo encontrado','Desabamento','Desmoronamento','Feminicídio','Homicídio','Homofobia','Incêndio','Invasão','Latrocínio','Protesto','Racismo','Roubo à domicílio','Tentativa de homicídio','Transfobia','Troca de tiros','Xenofobia')
+    then 12 else 0 end) as submission_price,
+    s.creator_user_id as author_id
+    from fact_submissions s
+    left join dim_events e on e.event_id = s.event_id
+    left join dim_event_types et on e.event_type_id = et.event_type_id
+    where e.deleted_at is null
+    and s.status_id = 4
+    and EXTRACT(EPOCH FROM ((e.created_at AT TIME ZONE 'America/Sao_Paulo') - (e.date AT TIME ZONE 'America/Sao_Paulo')))/60 < 180
+    --and e.city like '%São Paulo%'
+    and date_trunc('week', (e.created_at AT TIME ZONE 'America/Sao_Paulo')) = date_trunc('week', (current_date AT TIME ZONE 'America/Sao_Paulo'))
+    group by 2
+    ) aus on aus.author_id = u.user_id
+and u.user_type_id = 2
+where u.user_type_id = 2
+and u.news_sources_id <> '0869f833-c826-43f0-a915-5cf9fd6ca785'
+order by total_price desc
+
+
