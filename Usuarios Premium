@@ -1,0 +1,112 @@
+with tudo as 
+(
+select
+    distinct fua.user_id,
+    fua.username,
+    fua.phone,
+    email,
+    device_operating_system,
+    signup_timestamp,
+    case when location_permission_status in ('background','foreground') then 'Sim'
+        when location_permission_status in ('blocked','denied') then 'Não aceita/Bloqueada'
+        else 'n/a' end Permissão_localização,
+    case when notification_permission_status in ('granted') then 'Sim'
+        when notification_permission_status in ('blocked','denied') then 'Não aceita/Bloqueada'
+        else 'n/a' end Permissão_notificação ,
+    fua.is_premium,
+    user_status,
+    app_version,
+
+    case when fua.username like '%Civi%' then 'Não'
+        when fua.username <> ' ' then 'Sim' 
+        else 'Não' end Has_username,
+
+case when du.avatar <> ' ' then 'Sim' else 'Não' end Has_avatar,
+
+case when saved_places_count > 0 then 'Sim' else 'Não' end saved_places
+
+from fact_users_analytics fua
+join dim_users du on du.user_id = fua.user_id
+where fua.is_premium = 'True' and fua.user_type_name <> 'employee' and user_status not in  ('Uninstalled','Logged out','deleted')
+    and fua.user_id NOT IN (WITH subscriptions_users AS (SELECT ROW_NUMBER() OVER (
+    PARTITION BY fua.user_id 
+    ORDER BY event_date DESC ),
+fua.saved_places_count,
+fua.is_premium,
+fua.username,
+fua.last_active,
+fua.signup_timestamp,
+fua.device_operating_system,
+q.*
+FROM 
+(SELECT  app_account_token AS user_id,
+    created_at AS event_date,
+    apple_notification_type,
+    apple_notification_subtype,
+    NULL AS google_notification_type_id
+FROM fact_apple_notifications_history fanh 
+UNION ALL
+SELECT fso.user_id AS user_id,
+    event_time AS event_date,
+    NULL AS apple_notification_type,
+    NULL AS apple_notification_subtype,
+    google_notification_type_id
+FROM fact_google_notifications_history h 
+INNER JOIN fact_subscriptions_orders fso on h.purchase_token = fso.purchase_token
+) q
+INNER JOIN fact_users_analytics fua ON fua.user_id = q.user_id 
+WHERE user_type_name <> 'employee')
+
+
+SELECT 
+su.user_id
+FROM subscriptions_users su
+WHERE ROW_NUMBER= 1)
+
+
+
+),
+
+pendente as 
+(
+select
+    requesting_user usuario,
+    count(distinct target_user) pending_requests
+
+from fact_users_contacts_request
+where request_status = 'pending'
+group by 1
+),
+
+aceitos as 
+(
+select
+    requesting_user usuarioz,
+    count(distinct target_user) pending_requestsz
+    
+from fact_users_contacts_request
+where request_status = 'accepted'
+group by 1
+),
+
+aceitos_recebidos as 
+(
+select
+    target_user usuariozz,
+    count(distinct requesting_user) solicitações_aceitas
+
+from fact_users_contacts_request
+where request_status = 'accepted'
+group by 1
+)
+
+select
+    tudo.*,
+    case when (coalesce(pending_requestsz,0) + coalesce(solicitações_aceitas,0)) > 0 then 'Sim' else 'Não' end followed_users
+from tudo
+left join pendente pdt on pdt.usuario = tudo.user_id
+left join aceitos act on act.usuarioz = tudo.user_id
+left join aceitos_recebidos actt on actt.usuariozz = tudo.user_id
+
+
+
