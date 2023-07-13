@@ -1,0 +1,22 @@
+
+with aux as (select
+fua.user_id,
+last_location_geofence_name,
+count(fnu.notification_id) notifications,
+count(DISTINCT CASE WHEN fnu.received_timestamp IS NOT NULL THEN fnu.notification_id ELSE NULL END) received 
+
+from fact_users_analytics fua 
+left join fact_notifications_users fnu on fnu.user_id = fua.user_id 
+
+where 
+date_trunc('week',fnu.created_at) = date_trunc('week', current_date - interval '1 week')
+group by 1,2
+order by 2 asc)
+
+select 
+last_location_geofence_name distrito,
+count(case when received = 0 then user_id end) usuarios_sem_notificação
+from aux
+group by 1
+
+
