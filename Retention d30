@@ -1,0 +1,17 @@
+WITH RETENTION AS (SELECT DATE_TRUNC('day', signup_timestamp) as Cohort_week,
+count (distinct user_id) as total_signups, 
+
+count(distinct 
+case when currently_installed = 'false'
+and last_uninstall::date -signup_timestamp::date <= 30 
+then user_id else null end) as no_retentionD30
+
+
+from fact_users_analytics fua
+WHERE date_trunc('day',signup_timestamp::date) >= date_trunc('day',current_date -  interval '30 days')
+
+GROUP BY 1)
+
+SELECT retentionD30/total_signups::FLOAT AS retention_percentage, total_signups, Cohort_week
+
+FROM (SELECT *, total_signups-no_retentionD30 AS retentionD30 FROM RETENTION) AS NEW
